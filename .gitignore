@@ -1,0 +1,10 @@
+# Environment file
+.env
+
+# Folders
+node_modules/
+dist/
+
+# Batch files
+build.bat
+dev.bat

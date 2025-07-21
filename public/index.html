@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>Nurses Over Hours</title>
+	<link href="/output.css" rel="stylesheet">
+	<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com;">
+</head>
+<body>
+	<div class="flex bg-gray-300 h-screen w-screen p-4 text-[#636373]">
+		<div class="flex bg-white p-6 rounded-lg shadow-lg h-full w-full">
+			<div class="m-auto">
+				<div>
+					<p class="mx-auto text-4xl font-bold text-center text-[#43434E] mb-2 underline">
+						<span class="text-[#A40000]">STOP!</span> Nurses on Overtime
+					</p>
+					<p class="mx-auto text-xl font-light mb-4 w-[650px]">
+						In the interest of <span class="font-bold">OVERTIME management</span>, please be sure to check the Axis Care calendar and consult with your Team Lead, Supervisor, or other Manager before accepting coverage from one of these nurses:
+					</p>
+				</div>
+				<div class="rounded-md overflow-auto">
+					<div id="nurseGrid" class="flex flex-wrap justify-center gap-4">
+						<!-- Cards will be injected here -->
+					</div>
+				</div>
+			</div>
+		</div>
+	</div>
+	<script src="/main.js"></script>
+</body>
+</html>
