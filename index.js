@@ -2,16 +2,20 @@ require('dotenv').config();
 const express = require('express');
 var opener = require("opener");
 const app = express();
+
 const VISIT_API = `https://${process.env.AXISCARE_ID}.axiscare.com/api/visits`;
 const API_VERSION = '2023-10-01';
-const PORT = 2121;
+const PORT = process.env.PORT || 2121;
+const THRESHOLD = process.env.THRESHOLD;
+const REFRESH_MIN = process.env.REFRESH_MINUTES || 5;
 
-const threshold = process.env.THRESHOLD;
-const refreshHours = 1;
 let cachedOverHours = [];
-
+let lastUpdated = null;
 app.get('/api/overhours', (req, res) => {
-	res.json(cachedOverHours);
+	res.json({
+		'info': cachedOverHours,
+		'updated': lastUpdated,
+	});
 });
 
 app.use(express.static('public'));
@@ -26,21 +30,35 @@ app.listen(PORT, () => {
 	console.log('Dashboard available at', `http://localhost:${PORT}`);
 	opener(`http://localhost:${PORT}`);
 	main();
-	setInterval(main, refreshHours * 60 * 60 * 1000);
+	setInterval(main, REFRESH_MIN * 60 * 1000);
 });
 
 function getCurrentWeekRange() {
 	const today = new Date();
 	const dayOfWeek = today.getDay();
 
+	// Sunday this week
 	const sunday = new Date(today);
 	sunday.setDate(today.getDate() - dayOfWeek);
 
+	// Saturday this week
 	const saturday = new Date(today);
 	saturday.setDate(today.getDate() + (6 - dayOfWeek));
 
+	// Saturday next week
+	const nextSaturday = new Date(today);
+	nextSaturday.setDate(today.getDate() + (13 - dayOfWeek));
+
 	const formatDate = (date) => `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()}`;
-	return { start: formatDate(sunday), end: formatDate(saturday) };
+	return { start: formatDate(sunday), end: formatDate(nextSaturday), breakDate: saturday };
+}
+
+function isDateAfter(dateA, dateB) {
+	const a = new Date(dateA.toDateString());
+	const b = new Date(dateB.toDateString());
+
+	// Not sensitive to time
+	return a > b;
 }
 
 async function fetchVisits(startDate, endDate, url = VISIT_API) {
@@ -72,10 +90,10 @@ async function fetchVisits(startDate, endDate, url = VISIT_API) {
 	}
 }
 
-function hoursRunningTotal(visits, hoursMap) {
+function hoursRunningTotal(visits, hoursMap, breakDate) {
 	for (const visit of visits) {
 		const rn = visit.caregiver;
-		if (!rn) return;
+		if (!rn) continue;
 		const nurseName = (`${rn.firstName} ${rn.lastName}`).trim();
 
 		const schedStart = new Date(visit.scheduledStartDate);
@@ -83,20 +101,22 @@ function hoursRunningTotal(visits, hoursMap) {
 		const diff = schedEnd - schedStart;
 		const hours = diff / (1000 * 60 * 60);
 
-		if (!hoursMap[nurseName]) hoursMap[nurseName] = 0;
-		hoursMap[nurseName] += hours;
+		if (!hoursMap[nurseName]) hoursMap[nurseName] = { current: 0, next: 0 };
+		
+		if (isDateAfter(schedStart, breakDate)) hoursMap[nurseName].next += hours;
+		else hoursMap[nurseName].current += hours;
 	}
 }
 
-async function caregiverHours(start, end) {
+async function caregiverHours(start, end, breakDate) {
 	const hoursMap = {};
 	let nextPage = undefined;
 	do {
-		const results = await fetchVisits(start, end, nextPage);
+		let results = await fetchVisits(start, end, nextPage);
 		if (results) {
-			const visits = results.visits;
+			let visits = results.visits;
 			nextPage = results.nextPage;
-			hoursRunningTotal(visits, hoursMap);
+			hoursRunningTotal(visits, hoursMap, breakDate);
 		}
 		else {
 			console.error('No results returned by fetchVisits()');
@@ -107,11 +127,16 @@ async function caregiverHours(start, end) {
 }
 
 async function main() {
-	const {start, end} = getCurrentWeekRange();
-	const hours = await caregiverHours(start, end);
+	console.log(`Updating list of caregivers scheduled over ${THRESHOLD} hours...`);
+	const {start, end, breakDate} = getCurrentWeekRange();
+	const hours = await caregiverHours(start, end, breakDate);
 	if (!hours) return console.error('Unable to total caregiver hours');
 
 	cachedOverHours = Object.entries(hours)
-		.filter(([name, total]) => total > threshold)
+		.filter(([name, total]) => total.current > THRESHOLD || total.next > THRESHOLD)
 		.map(([name, total]) => ({ name, total }));
+
+	const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+	lastUpdated = `Last Updated: ${time}`;
+	console.log('\x1b[32m%s\x1b[0m', `[${time}] List updated`);
 }
